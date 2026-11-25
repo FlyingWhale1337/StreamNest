@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>StreamNest — чат</title>
+<style>  :root { --fs: 18px; --font: Inter, "Segoe UI", system-ui, sans-serif; --text: #fff; --accent: #8b5cf6; --em: 1.6; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { font: 600 var(--fs)/1.4 var(--font); color: var(--text); }
+  #chat { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: calc(var(--fs) * .35); padding: 10px; box-sizing: border-box; }
+  .m { display: block; word-wrap: break-word; max-width: 100%; box-sizing: border-box; transition: opacity .4s, transform .4s; }
+  .m .pf { display: inline-grid; place-items: center; width: 1.05em; height: 1.05em; border-radius: .25em; vertical-align: -.15em; margin-right: .3em; }
+  .m .pf svg { width: .68em; height: .68em; color: #fff; }
+  .pf.twitch { background: #9146ff; } .pf.youtube { background: #ff0033; } .pf.kick { background: #53fc18; } .m .pf.kick svg { color: #0b0b0b; }
+  .m .b { height: 1.1em; vertical-align: -.2em; margin-right: .22em; border-radius: .15em; }
+  .m .n { font-weight: 800; }
+  .m .e { height: calc(1em * var(--em)); vertical-align: middle; margin: -.25em .05em; }
+  .m .ev { display: block; font-size: .78em; opacity: .9; font-weight: 800; letter-spacing: .2px; }
+  .m.action .t { font-style: italic; }
+
+  .glass .m { background: rgba(12,12,20,.62); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.08); border-radius: .7em; padding: .45em .7em; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .glass .m.hl { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 6px 24px color-mix(in srgb, var(--accent) 40%, transparent); }
+  
+  .bubble .m { background: var(--accent); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, #000), color-mix(in srgb, var(--accent) 55%, #000)); border-radius: 1em 1em 1em .25em; padding: .5em .8em; width: fit-content; }
+  .bubble .m .n { color: #fff !important; text-shadow: none; }
+  .bubble .m .n::after { content: ""; display: block; }
+  .bubble .m .colon { display: none; }
+  
+  .minimal .m { padding: .1em .2em; text-shadow: 0 0 3px #000, 0 2px 4px rgba(0,0,0,.8); }
+  .minimal .m.hl .t { color: var(--accent); color: color-mix(in srgb, var(--accent) 50%, #fff); }
+
+  .m.superchat { background: linear-gradient(90deg, rgba(255,191,36,.9), rgba(255,140,0,.85)) !important; color: #1a1000; }
+  .m.superchat .n { color: #1a1000 !important; }
+
+  @keyframes slide { from { opacity: 0; transform: translateX(-30px); } }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes pop { 0% { opacity: 0; transform: scale(.6); } 70% { transform: scale(1.04); } }
+  .anim-slide .m.new { animation: slide .35s cubic-bezier(.2,.9,.3,1.2); }
+  .anim-fade .m.new { animation: fade .4s; }
+  .anim-pop .m.new { animation: pop .4s; transform-origin: left bottom; }
+  .m.out { opacity: 0; transform: translateX(-20px); }
+  .top #chat { justify-content: flex-start; }
+  #chat.right { align-items: flex-end; }
+  #chat.right .m { text-align: right; }
+</style>
+</head>
+<body>
+<div id="chat"></div>
+<script src="/lang.js"></script><script src="/app/i18n-en.js"></script><script src="/app/i18n.js"></script>
+<script src="/overlay/overlay.js"></script>
+<script>let cfg = {};
+let pollActive = false;
+const box = document.getElementById('chat');
+
+function applyConfig(c) {
+  cfg = c;
+  const r = document.documentElement.style;
+  r.setProperty('--fs', (Number(params.get('size')) || c.fontSize) + 'px');
+  r.setProperty('--font', `"${c.fontFamily}", Inter, "Segoe UI", system-ui, sans-serif`);
+  r.setProperty('--text', c.textColor);
+  r.setProperty('--accent', c.accent);
+  r.setProperty('--em', c.emoteScale);
+  document.body.className = `${params.get('theme') || c.theme} anim-${c.animation} ${c.align === 'top' ? 'top' : ''}`;
+  const w = Number(params.get('w') ?? c.width) || 0, h = Number(params.get('h') ?? c.height) || 0;
+  const right = (params.get('anchor') || c.anchor) === 'right';
+  Object.assign(box.style, {
+    width: w ? w + 'px' : '', height: h ? h + 'px' : '',
+    top: h ? 'auto' : '0', bottom: '0', left: right && w ? 'auto' : '0', right: right || !w ? '0' : 'auto',
+  });
+  box.classList.toggle('right', right);
+}
+
+function hidden(m) {
+  if (m.platform === 'system') return true;
+  if (cfg.hideCommands && (m.text || '').trim().startsWith('!')) return true;
+  if (cfg.hideVotes !== false && pollActive && /^(?:!(?:vote|голос|г|v)\s*)?\d$/i.test((m.text || '').trim())) return true;
+  const bots = String(cfg.hideBots || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+  return bots.includes(String(m.user.login || '').toLowerCase()) || bots.includes(String(m.user.name || '').toLowerCase());
+}
+
+function html(m) {
+  const u = m.user;
+  const badges = [
+    ...(cfg.showTwitchBadges ? (u.badges || []).map(b => `<img class="b" src="${esc(b.url)}">`) : []),
+    ...(cfg.showCustomBadges ? (u.custom || []).map(b => `<img class="b" src="${esc(b.url)}">`) : []),
+  ].join('');
+  const parts = (m.parts || []).map(p => p.type === 'emote' ? `<img class="e" src="${esc(p.url)}" alt="${esc(p.name)}">` : esc(p.text)).join('');
+  const cls = ['m', 'new'];
+  if (m.highlight === 'superchat') cls.push('superchat'); else if (m.highlight) cls.push('hl');
+  if (m.action) cls.push('action');
+  return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-p="${m.platform}" data-u="${esc(u.id)}">
+    ${m.eventText ? `<span class="ev">${esc(m.eventText)}</span>` : ''}${cfg.showPlatform ? `<span class="pf ${m.platform}">${PLATFORM_ICON[m.platform] || ''}</span>` : ''}${badges}<span class="n" data-raw style="color:${esc(nameColor(u))}">${esc(u.name)}</span><span class="colon">${m.action ? ' ' : ': '}</span><span class="t" data-raw>${parts}</span></div>`;
+}
+
+function add(m, animate = true) {
+  if (hidden(m)) return;
+  box.insertAdjacentHTML('beforeend', html(m));
+  const el = box.lastElementChild;
+  if (!animate) el.classList.remove('new');
+  const max = Number(cfg.maxMessages) || 25;
+  while (box.children.length > max) box.firstElementChild.remove();
+  while (box.scrollHeight > box.clientHeight + 4 && box.children.length > 1) box.firstElementChild.remove();
+  const hideAfter = Number(cfg.hideAfter) || 0;
+  if (hideAfter > 0) {
+    const left = hideAfter * 1000 - (Date.now() - (m.ts || Date.now()));
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, Math.max(0, left));
+  }
+}
+
+let last = [];
+connect({
+  'overlay-config': (c) => { const first = !cfg.theme; applyConfig(c); if (!first) { box.innerHTML = ''; last.forEach(m => add(m, false)); } },
+  history: (list) => { last = list.slice(); box.innerHTML = ''; list.forEach(m => add(m, false)); },
+  chat: (m) => { last.push(m); if (last.length > 100) last.shift(); add(m); },
+  poll: (p) => { pollActive = !!p && p.status === 'active'; },
+  'chat-remove': (d) => {
+    last = last.filter(m => !(m.platform === d.platform && ((d.messageId && m.id === d.messageId) || (d.userId && m.user.id === d.userId))));
+    [...box.children].forEach(el => {
+      if (el.dataset.p === d.platform && ((d.messageId && el.dataset.id === d.messageId) || (d.userId && el.dataset.u === d.userId))) el.remove();
+    });
+  },
+});
+</script>
+</body>
+</html>

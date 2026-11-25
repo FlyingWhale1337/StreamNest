@@ -1,0 +1,63 @@
+{
+  "name": "streamnest",
+  "version": "1.1.0",
+  "description": "Chat hub for streamers: Twitch, YouTube and Kick chat in one feed, 7TV, custom badges, polls, giveaways, commands, OBS widgets",
+  "main": "electron/main.js",
+  "private": true,
+  "license": "MIT",
+  "author": "Altov",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "app": "electron .",
+    "build:win": "electron-builder --win portable --x64",
+    "build:installer": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.streamnest",
+    "productName": "StreamNest",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "server/**",
+      "public/**",
+      "electron/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "StreamNest.exe"
+    },
+    "nsis": {
+      "artifactName": "StreamNest-Setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "StreamNest"
+    },
+    "copyright": "Copyright © 2026 Altov"
+  },
+  "keywords": [
+    "twitch",
+    "youtube",
+    "kick",
+    "chat",
+    "obs",
+    "overlay",
+    "7tv",
+    "streaming",
+    "chatbot",
+    "electron"
+  ]
+}
